@@ -1,9 +1,7 @@
 ## jsparser
 
 jsparser is a json parser for GO. It is efficient for processing large json objects. It is similar
-with [jstream](https://github.com/bcicen/jstream) library but it allows stream over selected any 
-
-json member instead of depth and also allow skipping json members for less memory usage.
+with [jstream](https://github.com/bcicen/jstream) library but it allows stream over selected any json member instead of depth and also allow skipping json members for less memory usage.
 
 ### Usage
 ```json
