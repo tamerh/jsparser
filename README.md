@@ -35,8 +35,8 @@ with [jstream](https://github.com/bcicen/jstream) library but it allows stream o
 
 ```go
 f, _ := os.Open("input.json")
-br := bufio.NewReaderSize(f,8192)
-parser := pr.NewJsonParser(br, "books")
+br := bufio.NewReaderSize(f,65536)
+parser := pr.NewJSONParser(br, "books")
 
 for json:= range *parser.Stream() {
     fmt.Println(json.ObjectVals["title"].StringVal)
@@ -55,7 +55,7 @@ parser := pr.NewJsonParser(br, "books").SkipProps([]string{"comments", "price"})
 <b>Error</b> handling
 
 ```go
-for json:= range *parser.Stream() {
+for json:= range 3parser.Stream() {
     if json.Err !=nil {
       // handle error
     }

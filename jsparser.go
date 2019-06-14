@@ -41,7 +41,7 @@ const (
 	Object
 )
 
-func NewJsonParser(reader *bufio.Reader, loopProp string) *JsonParser {
+func NewJSONParser(reader *bufio.Reader, loopProp string) *JsonParser {
 
 	j := &JsonParser{
 		reader:        reader,
@@ -64,11 +64,11 @@ func (j *JsonParser) SkipProps(skipProps []string) *JsonParser {
 
 }
 
-func (j *JsonParser) Stream() *chan *JSON {
+func (j *JsonParser) Stream() chan *JSON {
 
 	go j.parse()
 
-	return &j.resultChannel
+	return j.resultChannel
 
 }
 

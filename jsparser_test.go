@@ -28,7 +28,7 @@ func getparser(prop string) *JsonParser {
 
 		br := bufio.NewReader(strings.NewReader(minijson))
 
-		p := NewJsonParser(br, prop)
+		p := NewJSONParser(br, prop)
 
 		return p
 	}
@@ -37,7 +37,7 @@ func getparser(prop string) *JsonParser {
 
 	br := bufio.NewReader(file)
 
-	p := NewJsonParser(br, prop)
+	p := NewJSONParser(br, prop)
 
 	return p
 
@@ -50,7 +50,7 @@ func TestString(t *testing.T) {
 	p := getparser("s")
 	resultCount := 0
 
-	for json := range *p.Stream() {
+	for json := range p.Stream() {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -74,7 +74,7 @@ func TestString(t *testing.T) {
 
 	p = getparser("s2")
 
-	for json := range *p.Stream() {
+	for json := range p.Stream() {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -98,7 +98,7 @@ func TestBoolean(t *testing.T) {
 	resultCount := 0
 	var js JSON
 
-	for json := range *p.Stream() {
+	for json := range p.Stream() {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -129,7 +129,7 @@ func TestNumber(t *testing.T) {
 	resultCount := 0
 	var js JSON
 
-	for json := range *p.Stream() {
+	for json := range p.Stream() {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -160,7 +160,7 @@ func TestNull(t *testing.T) {
 	resultCount := 0
 	var js JSON
 
-	for json := range *p.Stream() {
+	for json := range p.Stream() {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -191,7 +191,7 @@ func TestObject(t *testing.T) {
 	resultCount := 0
 	var js JSON
 
-	for json := range *p.Stream() {
+	for json := range p.Stream() {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -232,7 +232,7 @@ func TestObject(t *testing.T) {
 	// Skip test
 	p = getparser("o").SkipProps([]string{"o1", "o2", "o4", "o5", "o6", "o7"})
 
-	for json := range *p.Stream() {
+	for json := range p.Stream() {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -277,7 +277,7 @@ func TestArray(t *testing.T) {
 
 	var results []*JSON
 
-	for json := range *p.Stream() {
+	for json := range p.Stream() {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -319,7 +319,7 @@ func TestArray(t *testing.T) {
 	// Skip test
 	p = getparser("a").SkipProps([]string{"a11", "a12", "a13"})
 
-	for json := range *p.Stream() {
+	for json := range p.Stream() {
 
 		if json.Err != nil {
 			panic(json.Err)
