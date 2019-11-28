@@ -147,6 +147,11 @@ func (j *JsonParser) parse() {
 
 					}
 
+					//if res is nil is because the json is invalid
+					if res == nil {
+						return
+					}
+
 					if res.Err != nil {
 						return
 					}
