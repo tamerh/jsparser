@@ -1,7 +1,6 @@
 ## jsparser
 
-jsparser is a json parser for GO. It is efficient for processing large json objects. It is similar
-with [jstream](https://github.com/bcicen/jstream) library but it allows stream over selected any json member instead of depth and also allow skipping json members for less memory usage.
+jsparser is a json parser for GO. It is efficient to parse large json data with streaming fashion.
 
 ### Usage
 ```json
@@ -46,7 +45,7 @@ for json:= range parser.Stream() {
   
 ```
 
-<b>Skip</b> comments and price information
+<b>Skip</b> props for efficiency
 
 ```go
 parser := pr.NewJSONParser(br, "books").SkipProps([]string{"comments", "price"})  
