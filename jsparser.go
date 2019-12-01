@@ -107,7 +107,13 @@ func (j *JsonParser) parse() {
 					j.sendError()
 					return
 				}
-				valType := j.getValueType(b)
+
+				valType, typeErr := j.getValueType(b)
+
+				if typeErr != nil {
+					j.sendError()
+					return
+				}
 
 				if j.loopProp == prop {
 
@@ -119,8 +125,8 @@ func (j *JsonParser) parse() {
 
 					case Array:
 
-						err := j.loopArray()
-						if err {
+						success := j.loopArray()
+						if !success {
 							return
 						}
 
@@ -191,7 +197,12 @@ func (j *JsonParser) loopArray() bool {
 			continue
 		}
 
-		valType := j.getValueType(b)
+		valType, err := j.getValueType(b)
+
+		if err != nil {
+			j.sendError()
+			return false
+		}
 
 		switch valType {
 		case String:
@@ -275,7 +286,13 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 				result.Err = j.defaultError()
 				return result
 			}
-			valType := j.getValueType(b)
+
+			valType, err := j.getValueType(b)
+
+			if err != nil {
+				result.Err = err
+				return result
+			}
 
 			switch valType {
 			case String:
@@ -337,10 +354,19 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 				return result
 			}
 
-		}
+		} else if b == ',' {
 
-		if b == '}' { // means complete of current object
+			continue
+
+		} else if b == '}' { // completion of current object
+
 			return result
+
+		} else { // invalid end
+
+			result.Err = j.defaultError()
+			return result
+
 		}
 
 	}
@@ -377,8 +403,11 @@ func (j *JsonParser) getArrayValueTree(result *JSON) *JSON {
 			return result
 		}
 
-		valType := j.getValueType(b)
+		valType, err := j.getValueType(b)
 
+		if err != nil {
+			return j.resultError()
+		}
 		switch valType {
 		case String:
 
@@ -668,25 +697,27 @@ func (j *JsonParser) skipArrayOrObject(start byte, end byte) *JSON {
 
 }
 
-func (j *JsonParser) getValueType(c byte) ValueType {
+func (j *JsonParser) getValueType(c byte) (ValueType, error) {
 
 	switch c {
 	case '"':
-		return String
+		return String, nil
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-':
-		return Number
+		return Number, nil
 	case 'f':
-		return Boolean
+		return Boolean, nil
 	case 't':
-		return Boolean
+		return Boolean, nil
 	case 'n':
-		return Null
+		return Null, nil
 	case '[':
-		return Array
+		return Array, nil
 	case '{':
-		return Object
+		return Object, nil
 	}
-	return Invalid
+
+	return Invalid, j.defaultError()
+
 }
 
 func (j *JsonParser) getPropName() (string, bool, bool) {

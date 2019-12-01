@@ -2,6 +2,7 @@ package jsparser
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"os"
 	"strings"
@@ -341,6 +342,49 @@ func TestArray(t *testing.T) {
 
 		}
 
+	}
+
+}
+
+func TestInvalid(t *testing.T) {
+
+	invalidStart := `{{"Name": "Ed", "Text": "Go fmt."},"s":"valid","s2":in"valid"}`
+
+	br := bufio.NewReader(bytes.NewReader([]byte(invalidStart)))
+	parser := NewJSONParser(br, "s2")
+
+	for js := range parser.Stream() {
+
+		if js.Err == nil {
+			t.Fatal("Invalid error expected")
+		}
+
+	}
+
+	invalidStart2 := `{{"Name": "Ed", "Text": "Go fmt."},"s":in"valid","s2":"valid"}` // invalid in non loop property
+
+	br = bufio.NewReader(bytes.NewReader([]byte(invalidStart2)))
+	parser = NewJSONParser(br, "s2")
+
+	for js := range parser.Stream() {
+
+		if js.Err == nil {
+			t.Fatal("Invalid error expected")
+		}
+
+	}
+
+	invalidEnd := `{"list":[{"Name": "Ed" , "Text": "Go fmt."} , {"Name": "Sam" , "Text": "Go fm"t who?"}]}`
+
+	br = bufio.NewReader(bytes.NewReader([]byte(invalidEnd)))
+	parser = NewJSONParser(br, "list")
+	index := 0
+	for js := range parser.Stream() {
+
+		if index == 1 && js.Err == nil {
+			t.Fatal("Invalid error expected")
+		}
+		index++
 	}
 
 }

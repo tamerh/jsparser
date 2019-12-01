@@ -9,13 +9,13 @@
   "s1": "s1tring",
   "s2": "s2tr\\ing\"\u849c",
   "o": {
-    "o1": "o1string",
-    "o2": "o2string",
-    "o3": true,
+    "o1": "o1string" ,
+    "o2": "o2string" ,
+    "o3": true ,
     "o4": ["o4string", {
         "o41": "o41string"
       },
-      ["o4nestedarray item 1", "o4nestedarray item 1 item 2", true, 99, null, 90.98]
+      ["o4nestedarray item 1" , "o4nestedarray item 1 item 2" , true, 99 , null, 90.98]
     ],
     "o5": 98.21,
     "o6": null,
