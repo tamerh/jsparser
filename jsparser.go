@@ -123,6 +123,10 @@ func (j *JsonParser) parse() {
 						res = j.string()
 						j.resultChannel <- res
 
+						if res.Err != nil {
+							return
+						}
+
 					case Array:
 
 						success := j.loopArray()
@@ -136,25 +140,37 @@ func (j *JsonParser) parse() {
 						j.getObjectValueTree(res)
 						j.resultChannel <- res
 
+						if res.Err != nil {
+							return
+						}
+
 					case Boolean:
 
 						res = j.boolean()
 						j.resultChannel <- res
+
+						if res.Err != nil {
+							return
+						}
 
 					case Number:
 
 						res = j.number(b)
 						j.resultChannel <- res
 
+						if res.Err != nil {
+							return
+						}
+
 					case Null:
 
 						res = j.null()
 						j.resultChannel <- res
 
-					}
+						if res.Err != nil {
+							return
+						}
 
-					if res.Err != nil {
-						return
 					}
 
 				} else {

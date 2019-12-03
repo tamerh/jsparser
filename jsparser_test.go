@@ -346,6 +346,45 @@ func TestArray(t *testing.T) {
 
 }
 
+func TestArrayOnly(t *testing.T) {
+
+	jsonArrays := [2]string{}
+	jsonArrays[0] = `
+		{"list":[
+											{"Name": "Ed", "Text": "Knock knock."},
+											{"Name": "Sam", "Text": "Who's there?"},
+											{"Name": "Ed", "Text": "Go fmt."},
+											{"Name": "Sam", "Text": "Go fmt ?"},
+											{"Name": "Ed", "Text": "Go fmt !"}
+									]}
+		`
+	jsonArrays[1] = "[" + jsonArrays[0] + "]"
+
+	for _, jsarray := range jsonArrays {
+		br := bufio.NewReader(bytes.NewReader([]byte(jsarray)))
+		parser := NewJSONParser(br, "list")
+		var results []*JSON
+		for json := range parser.Stream() {
+
+			if json.Err != nil {
+				t.Fatal(" Test failed")
+			}
+			results = append(results, json)
+		}
+		if results[0].ObjectVals["Text"].StringVal != "Knock knock." {
+			t.Fatal("results[0] Test failed ")
+		}
+
+		if results[1].ObjectVals["Name"].StringVal != "Sam" {
+			t.Fatal("results[0] Test failed ")
+		}
+
+		if results[4].ObjectVals["Name"].StringVal != "Ed" {
+			t.Fatal("results[0] Test failed ")
+		}
+	}
+}
+
 func TestInvalid(t *testing.T) {
 
 	invalidStart := `{{"Name": "Ed", "Text": "Go fmt."},"s":"valid","s2":in"valid"}`
