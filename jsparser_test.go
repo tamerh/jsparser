@@ -427,3 +427,17 @@ func TestInvalid(t *testing.T) {
 	}
 
 }
+
+func Benchmark1(b *testing.B) {
+
+	for n := 0; n < b.N; n++ {
+		p := getparser("a").SkipProps([]string{"a11"})
+		for json := range p.Stream() {
+			nothing(json)
+		}
+	}
+}
+
+func nothing(j *JSON) {
+
+}

@@ -28,7 +28,7 @@ type JSON struct {
 }
 
 // ValueType of JSON value
-type ValueType int
+type ValueType int8
 
 // JSON types
 const (
@@ -137,7 +137,7 @@ func (j *JsonParser) parse() {
 					case Object:
 
 						res := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
-						j.getObjectValueTree(res)
+						j.getObjectTree(res)
 						j.resultChannel <- res
 
 						if res.Err != nil {
@@ -198,7 +198,6 @@ func (j *JsonParser) loopArray() bool {
 
 	var b byte
 	var err error
-	var res *JSON
 
 	for {
 
@@ -237,14 +236,14 @@ func (j *JsonParser) loopArray() bool {
 
 		case Array:
 
-			res = &JSON{ObjectVals: map[string]*JSON{}, ValueType: Array}
-			j.getArrayValueTree(res)
+			res := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Array}
+			j.getArrayTree(res)
 			j.resultChannel <- res
 
 		case Object:
 
-			res = &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
-			j.getObjectValueTree(res)
+			res := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
+			j.getObjectTree(res)
 			j.resultChannel <- res
 
 		case Boolean:
@@ -278,15 +277,11 @@ func (j *JsonParser) loopArray() bool {
 
 		}
 
-		if res.Err != nil {
-			return false
-		}
-
 	}
 
 }
 
-func (j *JsonParser) getObjectValueTree(res *JSON) {
+func (j *JsonParser) getObjectTree(res *JSON) {
 
 	if res.Err != nil {
 		return
@@ -368,7 +363,7 @@ func (j *JsonParser) getObjectValueTree(res *JSON) {
 					break
 				}
 				r := &JSON{ValueType: Array}
-				j.getArrayValueTree(r)
+				j.getArrayTree(r)
 				if r.Err != nil {
 					res.Err = r.Err
 					return
@@ -387,7 +382,7 @@ func (j *JsonParser) getObjectValueTree(res *JSON) {
 					break
 				}
 				r := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
-				j.getObjectValueTree(r)
+				j.getObjectTree(r)
 
 				if r.Err != nil {
 					res.Err = r.Err
@@ -455,7 +450,7 @@ func (j *JsonParser) getObjectValueTree(res *JSON) {
 
 }
 
-func (j *JsonParser) getArrayValueTree(res *JSON) {
+func (j *JsonParser) getArrayTree(res *JSON) {
 
 	if res.Err != nil {
 		return
@@ -505,7 +500,7 @@ func (j *JsonParser) getArrayValueTree(res *JSON) {
 		case Array:
 
 			r := &JSON{ValueType: Array}
-			j.getArrayValueTree(r)
+			j.getArrayTree(r)
 			if r.Err != nil {
 				res.Err = r.Err
 				return
@@ -515,7 +510,7 @@ func (j *JsonParser) getArrayValueTree(res *JSON) {
 		case Object:
 
 			r := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
-			j.getObjectValueTree(r)
+			j.getObjectTree(r)
 			if r.Err != nil {
 				res.Err = r.Err
 				return
