@@ -5,8 +5,10 @@ import "unicode/utf8"
 // based on https://github.com/bcicen/jstream
 
 type scratch struct {
-	data []byte
-	fill int
+	data    []byte
+	dataRes []*JSON
+	fill    int
+	fillRes int
 }
 
 // reset scratch buffer
@@ -44,4 +46,25 @@ func (s *scratch) addRune(r rune) int {
 	n := utf8.EncodeRune(s.data[s.fill:], r)
 	s.fill += n
 	return n
+}
+
+// grow result buffer
+func (s *scratch) growRes() {
+	ndata := make([]*JSON, cap(s.dataRes)*2)
+	copy(ndata, s.dataRes[:])
+	s.dataRes = ndata
+}
+
+// add result
+func (s *scratch) addRes(res *JSON) {
+	if s.fillRes+1 >= cap(s.dataRes) {
+		s.growRes()
+	}
+
+	s.dataRes[s.fillRes] = res
+	s.fillRes++
+}
+
+func (s *scratch) allRes() []*JSON {
+	return s.dataRes[0:s.fillRes]
 }

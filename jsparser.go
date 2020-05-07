@@ -10,7 +10,8 @@ import (
 type JsonParser struct {
 	reader        *bufio.Reader
 	loopProp      []byte
-	resultChannel chan *JSON
+	resChan       chan *JSON
+	isResArr      bool
 	skipProps     map[string]bool
 	TotalReadSize uint64
 	lastReadSize  int
@@ -44,11 +45,11 @@ const (
 func NewJSONParser(reader *bufio.Reader, loopProp string) *JsonParser {
 
 	j := &JsonParser{
-		reader:        reader,
-		loopProp:      []byte(loopProp),
-		resultChannel: make(chan *JSON, 256),
-		skipProps:     map[string]bool{},
-		scratch:       &scratch{data: make([]byte, 1024)},
+		reader:    reader,
+		loopProp:  []byte(loopProp),
+		resChan:   make(chan *JSON, 256),
+		skipProps: map[string]bool{},
+		scratch:   &scratch{data: make([]byte, 2048), dataRes: make([]*JSON, 2048)},
 	}
 	return j
 }
@@ -68,13 +69,21 @@ func (j *JsonParser) Stream() chan *JSON {
 
 	go j.parse()
 
-	return j.resultChannel
+	return j.resChan
+
+}
+
+func (j *JsonParser) Parse() []*JSON {
+
+	j.isResArr = true
+	j.parse()
+	return j.scratch.allRes()
 
 }
 
 func (j *JsonParser) parse() {
 
-	defer close(j.resultChannel)
+	defer close(j.resChan)
 
 	var b byte
 	var err error
@@ -122,10 +131,10 @@ func (j *JsonParser) parse() {
 						err = j.string()
 
 						if err != nil {
-							j.resultChannel <- &JSON{Err: err, ValueType: Invalid}
+							j.sendError()
 							return
 						}
-						j.resultChannel <- &JSON{StringVal: j.scratch.string(), ValueType: String}
+						j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: String})
 
 					case Array:
 
@@ -138,8 +147,7 @@ func (j *JsonParser) parse() {
 
 						res := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
 						j.getObjectTree(res)
-						j.resultChannel <- res
-
+						j.sendRes(res)
 						if res.Err != nil {
 							return
 						}
@@ -148,32 +156,30 @@ func (j *JsonParser) parse() {
 
 						b, err := j.boolean()
 						if err != nil {
-							j.resultChannel <- &JSON{Err: err, ValueType: Invalid}
+							j.sendError()
 							return
 						}
-
-						j.resultChannel <- &JSON{BoolVal: b, ValueType: Boolean}
+						j.sendRes(&JSON{BoolVal: b, ValueType: Boolean})
 
 					case Number:
 
 						err = j.number(b)
 
 						if err != nil {
-							j.resultChannel <- &JSON{Err: err, ValueType: Invalid}
+							j.sendError()
 							return
 						}
-						j.resultChannel <- &JSON{StringVal: j.scratch.string(), ValueType: Number}
+						j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: Number})
 
 					case Null:
 
 						err := j.null()
 
 						if err != nil {
-							j.resultChannel <- &JSON{Err: err, ValueType: Invalid}
+							j.sendError()
 							return
 						}
-
-						j.resultChannel <- &JSON{ValueType: Null}
+						j.sendRes(&JSON{ValueType: Null})
 
 					}
 
@@ -182,7 +188,7 @@ func (j *JsonParser) parse() {
 					if valType == String { // if valtype is string just skip it otherwise continue looking loopProp.
 						err = j.skipString()
 						if err != nil {
-							j.resultChannel <- &JSON{Err: err, ValueType: Invalid}
+							j.sendError()
 							return
 						}
 					}
@@ -192,6 +198,14 @@ func (j *JsonParser) parse() {
 		}
 	}
 
+}
+
+func (j *JsonParser) sendRes(res *JSON) {
+	if j.isResArr {
+		j.scratch.addRes(res)
+	} else {
+		j.resChan <- res
+	}
 }
 
 func (j *JsonParser) loopArray() bool {
@@ -229,32 +243,30 @@ func (j *JsonParser) loopArray() bool {
 			err = j.string()
 
 			if err != nil {
-				j.resultChannel <- &JSON{Err: err, ValueType: Invalid}
+				j.sendRes(&JSON{Err: err, ValueType: Invalid})
 				return false
 			}
-			j.resultChannel <- &JSON{StringVal: j.scratch.string(), ValueType: String}
-
+			j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: String})
 		case Array:
 
 			res := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Array}
 			j.getArrayTree(res)
-			j.resultChannel <- res
+			j.sendRes(res)
 
 		case Object:
 
 			res := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
 			j.getObjectTree(res)
-			j.resultChannel <- res
+			j.sendRes(res)
 
 		case Boolean:
 
 			b, err := j.boolean()
 			if err != nil {
-				j.resultChannel <- &JSON{Err: err, ValueType: Invalid}
+				j.sendError()
 				return false
 			}
-
-			j.resultChannel <- &JSON{BoolVal: b, ValueType: Boolean}
+			j.sendRes(&JSON{BoolVal: b, ValueType: Boolean})
 
 		case Number:
 
@@ -262,8 +274,7 @@ func (j *JsonParser) loopArray() bool {
 			if err != nil {
 				return false
 			}
-
-			j.resultChannel <- &JSON{StringVal: j.scratch.string(), ValueType: Number}
+			j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: Number})
 
 		case Null:
 
@@ -272,8 +283,7 @@ func (j *JsonParser) loopArray() bool {
 			if err != nil {
 				return false
 			}
-
-			j.resultChannel <- &JSON{ValueType: Null}
+			j.sendRes(&JSON{ValueType: Null})
 
 		}
 
@@ -901,7 +911,11 @@ func (j *JsonParser) unreadByte() error {
 
 func (j *JsonParser) sendError() {
 	err := fmt.Errorf("Invalid json")
-	j.resultChannel <- &JSON{Err: err, ValueType: Invalid}
+	if j.isResArr {
+		j.scratch.addRes(&JSON{Err: err, ValueType: Invalid})
+	} else {
+		j.resChan <- &JSON{Err: err, ValueType: Invalid}
+	}
 }
 
 func (j *JsonParser) resultError() *JSON {

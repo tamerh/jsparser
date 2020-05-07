@@ -10,11 +10,14 @@ import (
 )
 
 var minify bool
+var parseall bool
 
 func TestMain(m *testing.M) {
 	// call flag.Parse() here if TestMain uses flags
 
 	flag.BoolVar(&minify, "minify", false, "Minify")
+
+	flag.BoolVar(&parseall, "parseall", false, "ParseAll")
 
 	flag.Parse()
 
@@ -44,6 +47,19 @@ func getparser(prop string) *JsonParser {
 
 }
 
+func allResult(p *JsonParser) []*JSON {
+
+	if parseall {
+		return p.Parse()
+
+	}
+	var res []*JSON
+	for json := range p.Stream() {
+		res = append(res, json)
+	}
+	return res
+
+}
 func TestString(t *testing.T) {
 
 	var js JSON
@@ -51,7 +67,7 @@ func TestString(t *testing.T) {
 	p := getparser("s")
 	resultCount := 0
 
-	for json := range p.Stream() {
+	for _, json := range allResult(p) {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -75,7 +91,7 @@ func TestString(t *testing.T) {
 
 	p = getparser("s2")
 
-	for json := range p.Stream() {
+	for _, json := range allResult(p) {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -99,7 +115,7 @@ func TestBoolean(t *testing.T) {
 	resultCount := 0
 	var js JSON
 
-	for json := range p.Stream() {
+	for _, json := range allResult(p) {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -130,7 +146,7 @@ func TestNumber(t *testing.T) {
 	resultCount := 0
 	var js JSON
 
-	for json := range p.Stream() {
+	for _, json := range allResult(p) {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -161,7 +177,7 @@ func TestNull(t *testing.T) {
 	resultCount := 0
 	var js JSON
 
-	for json := range p.Stream() {
+	for _, json := range allResult(p) {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -192,7 +208,7 @@ func TestObject(t *testing.T) {
 	resultCount := 0
 	var js JSON
 
-	for json := range p.Stream() {
+	for _, json := range allResult(p) {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -233,7 +249,7 @@ func TestObject(t *testing.T) {
 	// Skip test
 	p = getparser("o").SkipProps([]string{"o1", "o2", "o4", "o5", "o6", "o7"})
 
-	for json := range p.Stream() {
+	for _, json := range allResult(p) {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -278,7 +294,7 @@ func TestArray(t *testing.T) {
 
 	var results []*JSON
 
-	for json := range p.Stream() {
+	for _, json := range allResult(p) {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -320,7 +336,7 @@ func TestArray(t *testing.T) {
 	// Skip test
 	p = getparser("a").SkipProps([]string{"a11", "a12", "a13"})
 
-	for json := range p.Stream() {
+	for _, json := range allResult(p) {
 
 		if json.Err != nil {
 			panic(json.Err)
@@ -362,9 +378,9 @@ func TestArrayOnly(t *testing.T) {
 
 	for _, jsarray := range jsonArrays {
 		br := bufio.NewReader(bytes.NewReader([]byte(jsarray)))
-		parser := NewJSONParser(br, "list")
+		p := NewJSONParser(br, "list")
 		var results []*JSON
-		for json := range parser.Stream() {
+		for _, json := range allResult(p) {
 
 			if json.Err != nil {
 				t.Fatal(" Test failed")
@@ -390,11 +406,11 @@ func TestInvalid(t *testing.T) {
 	invalidStart := `{{"Name": "Ed", "Text": "Go fmt."},"s":"valid","s2":in"valid"}`
 
 	br := bufio.NewReader(bytes.NewReader([]byte(invalidStart)))
-	parser := NewJSONParser(br, "s2")
+	p := NewJSONParser(br, "s2")
 
-	for js := range parser.Stream() {
+	for _, json := range allResult(p) {
 
-		if js.Err == nil {
+		if json.Err == nil {
 			t.Fatal("Invalid error expected")
 		}
 
@@ -403,11 +419,11 @@ func TestInvalid(t *testing.T) {
 	invalidStart2 := `{{"Name": "Ed", "Text": "Go fmt."},"s":in"valid","s2":"valid"}` // invalid in non loop property
 
 	br = bufio.NewReader(bytes.NewReader([]byte(invalidStart2)))
-	parser = NewJSONParser(br, "s2")
+	p = NewJSONParser(br, "s2")
 
-	for js := range parser.Stream() {
+	for _, json := range allResult(p) {
 
-		if js.Err == nil {
+		if json.Err == nil {
 			t.Fatal("Invalid error expected")
 		}
 
@@ -416,11 +432,11 @@ func TestInvalid(t *testing.T) {
 	invalidEnd := `{"list":[{"Name": "Ed" , "Text": "Go fmt."} , {"Name": "Sam" , "Text": "Go fm"t who?"}]}`
 
 	br = bufio.NewReader(bytes.NewReader([]byte(invalidEnd)))
-	parser = NewJSONParser(br, "list")
+	p = NewJSONParser(br, "list")
 	index := 0
-	for js := range parser.Stream() {
+	for _, json := range allResult(p) {
 
-		if index == 1 && js.Err == nil {
+		if index == 1 && json.Err == nil {
 			t.Fatal("Invalid error expected")
 		}
 		index++
@@ -433,6 +449,16 @@ func Benchmark1(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		p := getparser("a").SkipProps([]string{"a11"})
 		for json := range p.Stream() {
+			nothing(json)
+		}
+	}
+}
+
+func Benchmark2(b *testing.B) {
+
+	for n := 0; n < b.N; n++ {
+		p := getparser("a").SkipProps([]string{"a11"})
+		for _, json := range p.Parse() {
 			nothing(json)
 		}
 	}
