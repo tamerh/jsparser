@@ -42,7 +42,11 @@ for json:= range parser.Stream() {
     fmt.Println(json.ObjectVals["price"].StringVal)
     fmt.Println(json.ObjectVals["comments"].ArrayVals[0].ObjectVals["rating"].StringVal)
 }
-  
+
+// for relatively small size json. get all the results as slice
+for json:= range parser.Parse() {
+}
+
 ```
 
 <b>Skip</b> props for efficiency
