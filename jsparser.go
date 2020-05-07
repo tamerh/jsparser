@@ -3,14 +3,15 @@ package jsparser
 import (
 	"bufio"
 	"fmt"
+	"reflect"
 	"unicode/utf16"
-	"unicode/utf8"
 )
 
 type JsonParser struct {
 	reader        *bufio.Reader
-	loopProp      string
-	resultChannel chan *JSON
+	loopProp      []byte
+	resChan       chan *JSON
+	isResArr      bool
 	skipProps     map[string]bool
 	TotalReadSize uint64
 	lastReadSize  int
@@ -28,7 +29,7 @@ type JSON struct {
 }
 
 // ValueType of JSON value
-type ValueType int
+type ValueType int8
 
 // JSON types
 const (
@@ -44,11 +45,11 @@ const (
 func NewJSONParser(reader *bufio.Reader, loopProp string) *JsonParser {
 
 	j := &JsonParser{
-		reader:        reader,
-		loopProp:      loopProp,
-		resultChannel: make(chan *JSON, 256),
-		skipProps:     map[string]bool{},
-		scratch:       &scratch{data: make([]byte, 1024)},
+		reader:    reader,
+		loopProp:  []byte(loopProp),
+		resChan:   make(chan *JSON, 256),
+		skipProps: map[string]bool{},
+		scratch:   &scratch{data: make([]byte, 2048), dataRes: make([]*JSON, 2048)},
 	}
 	return j
 }
@@ -68,17 +69,24 @@ func (j *JsonParser) Stream() chan *JSON {
 
 	go j.parse()
 
-	return j.resultChannel
+	return j.resChan
+
+}
+
+func (j *JsonParser) Parse() []*JSON {
+
+	j.isResArr = true
+	j.parse()
+	return j.scratch.allRes()
 
 }
 
 func (j *JsonParser) parse() {
 
-	defer close(j.resultChannel)
+	defer close(j.resChan)
 
 	var b byte
 	var err error
-	var res *JSON
 
 	for {
 		b, err = j.readByte()
@@ -93,9 +101,9 @@ func (j *JsonParser) parse() {
 
 		if b == '"' { // begining of possible json property
 
-			prop, isprop, propErr := j.getPropName()
+			isprop, err := j.getPropName()
 
-			if propErr {
+			if err != nil {
 				j.sendError()
 				return
 			}
@@ -115,17 +123,18 @@ func (j *JsonParser) parse() {
 					return
 				}
 
-				if j.loopProp == prop {
+				if reflect.DeepEqual(j.loopProp, j.scratch.bytes()) {
 
 					switch valType {
 					case String:
 
-						res = j.string()
-						j.resultChannel <- res
+						err = j.string()
 
-						if res.Err != nil {
+						if err != nil {
+							j.sendError()
 							return
 						}
+						j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: String})
 
 					case Array:
 
@@ -136,49 +145,50 @@ func (j *JsonParser) parse() {
 
 					case Object:
 
-						res = &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
-						j.getObjectValueTree(res)
-						j.resultChannel <- res
-
+						res := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
+						j.getObjectTree(res)
+						j.sendRes(res)
 						if res.Err != nil {
 							return
 						}
 
 					case Boolean:
 
-						res = j.boolean()
-						j.resultChannel <- res
-
-						if res.Err != nil {
+						b, err := j.boolean()
+						if err != nil {
+							j.sendError()
 							return
 						}
+						j.sendRes(&JSON{BoolVal: b, ValueType: Boolean})
 
 					case Number:
 
-						res = j.number(b)
-						j.resultChannel <- res
+						err = j.number(b)
 
-						if res.Err != nil {
+						if err != nil {
+							j.sendError()
 							return
 						}
+						j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: Number})
 
 					case Null:
 
-						res = j.null()
-						j.resultChannel <- res
+						err := j.null()
 
-						if res.Err != nil {
+						if err != nil {
+							j.sendError()
 							return
 						}
+						j.sendRes(&JSON{ValueType: Null})
 
 					}
 
 				} else {
 
 					if valType == String { // if valtype is string just skip it otherwise continue looking loopProp.
-						res = j.skipString()
-						if res.Err != nil {
-							j.resultChannel <- res
+						err = j.skipString()
+						if err != nil {
+							j.sendError()
 							return
 						}
 					}
@@ -190,11 +200,18 @@ func (j *JsonParser) parse() {
 
 }
 
+func (j *JsonParser) sendRes(res *JSON) {
+	if j.isResArr {
+		j.scratch.addRes(res)
+	} else {
+		j.resChan <- res
+	}
+}
+
 func (j *JsonParser) loopArray() bool {
 
 	var b byte
 	var err error
-	var res *JSON
 
 	for {
 
@@ -223,61 +240,72 @@ func (j *JsonParser) loopArray() bool {
 		switch valType {
 		case String:
 
-			res = j.string()
-			j.resultChannel <- res
+			err = j.string()
 
+			if err != nil {
+				j.sendRes(&JSON{Err: err, ValueType: Invalid})
+				return false
+			}
+			j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: String})
 		case Array:
 
-			res = &JSON{ObjectVals: map[string]*JSON{}, ValueType: Array}
-			j.getArrayValueTree(res)
-			j.resultChannel <- res
+			res := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Array}
+			j.getArrayTree(res)
+			j.sendRes(res)
 
 		case Object:
 
-			res = &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
-			j.getObjectValueTree(res)
-			j.resultChannel <- res
+			res := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
+			j.getObjectTree(res)
+			j.sendRes(res)
 
 		case Boolean:
 
-			res = j.boolean()
-			j.resultChannel <- res
+			b, err := j.boolean()
+			if err != nil {
+				j.sendError()
+				return false
+			}
+			j.sendRes(&JSON{BoolVal: b, ValueType: Boolean})
 
 		case Number:
 
-			res = j.number(b)
-			j.resultChannel <- res
+			err = j.number(b)
+			if err != nil {
+				return false
+			}
+			j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: Number})
 
 		case Null:
 
-			res = j.null()
-			j.resultChannel <- res
+			err := j.null()
 
-		}
+			if err != nil {
+				return false
+			}
+			j.sendRes(&JSON{ValueType: Null})
 
-		if res.Err != nil {
-			return false
 		}
 
 	}
 
 }
 
-func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
+func (j *JsonParser) getObjectTree(res *JSON) {
 
-	if result.Err != nil {
-		return result
+	if res.Err != nil {
+		return
 	}
 
 	var b byte
 	var err error
-	var res *JSON
 	for {
 
 		b, err = j.readByte()
 
 		if err != nil {
-			return j.resultError()
+			res.Err = err
+			return
 		}
 
 		if j.isWS(b) {
@@ -286,88 +314,127 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 
 		if b == '"' { // begining of json property
 
-			prop, isprop, err2 := j.getPropName()
+			_, err := j.getPropName() // first variable ommited because inside object there can't be string item
+			prop := j.scratch.string()
 
-			if err2 {
-				result.Err = j.defaultError()
-				return result
-			}
-
-			if !isprop { // look again
-				continue
+			if err != nil {
+				res.Err = err
+				return
 			}
 
 			b, err = j.skipWS()
 			if err != nil {
-				result.Err = j.defaultError()
-				return result
+				res.Err = j.defaultError()
+				return
 			}
 
 			valType, err := j.getValueType(b)
 
 			if err != nil {
-				result.Err = err
-				return result
+				res.Err = err
+				return
 			}
 
 			switch valType {
 			case String:
 
 				if ok := j.skipProps[prop]; ok {
-					res = j.skipString()
+					err = j.skipString()
+
+					if err != nil {
+						res.Err = err
+						return
+					}
 					break
 				}
 
-				res = j.string()
-				result.ObjectVals[prop] = res
+				err = j.string()
+
+				if err != nil {
+					res.Err = err
+					return
+				}
+
+				res.ObjectVals[prop] = &JSON{StringVal: j.scratch.string(), ValueType: String}
 
 			case Array:
 
 				if ok := j.skipProps[prop]; ok {
-					res = j.skipArrayOrObject('[', ']')
+					err = j.skipArrayOrObject('[', ']')
+
+					if err != nil {
+						res.Err = err
+						return
+					}
 					break
 				}
-
-				res = j.getArrayValueTree(&JSON{ValueType: Array})
-				result.ObjectVals[prop] = res
+				r := &JSON{ValueType: Array}
+				j.getArrayTree(r)
+				if r.Err != nil {
+					res.Err = r.Err
+					return
+				}
+				res.ObjectVals[prop] = r
 
 			case Object:
 
 				if ok := j.skipProps[prop]; ok {
-					res = j.skipArrayOrObject('{', '}')
+					err = j.skipArrayOrObject('{', '}')
+
+					if err != nil {
+						res.Err = err
+						return
+					}
 					break
 				}
+				r := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
+				j.getObjectTree(r)
 
-				res = j.getObjectValueTree(&JSON{ObjectVals: map[string]*JSON{}, ValueType: Object})
-				result.ObjectVals[prop] = res
+				if r.Err != nil {
+					res.Err = r.Err
+					return
+				}
+				res.ObjectVals[prop] = r
 
 			case Boolean:
 
-				res = j.boolean()
+				b, err := j.boolean()
+
+				if err != nil {
+					res.Err = err
+					return
+				}
+
 				// rest of the skip since they are small we just don't include in the result
 				if ok := j.skipProps[prop]; !ok {
-					result.ObjectVals[prop] = res
+					res.ObjectVals[prop] = &JSON{BoolVal: b, ValueType: Boolean}
 				}
 
 			case Number:
 
-				res = j.number(b)
+				err = j.number(b)
+
+				if err != nil {
+					res.Err = err
+					return
+				}
+
 				if ok := j.skipProps[prop]; !ok {
-					result.ObjectVals[prop] = res
+					res.ObjectVals[prop] = &JSON{StringVal: j.scratch.string(), ValueType: Number}
 				}
 
 			case Null:
 
-				res = j.null()
-				if ok := j.skipProps[prop]; !ok {
-					result.ObjectVals[prop] = res
+				err = j.null()
+				if err != nil {
+					res.Err = err
+					return
 				}
 
-			}
+				if ok := j.skipProps[prop]; !ok {
+					res.ObjectVals[prop] = &JSON{ValueType: Null}
+				}
 
-			if res.Err != nil {
-				result.Err = res.Err
-				return result
 			}
 
 		} else if b == ',' {
@@ -376,12 +443,12 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 
 		} else if b == '}' { // completion of current object
 
-			return result
+			return
 
 		} else { // invalid end
 
-			result.Err = j.defaultError()
-			return result
+			res.Err = j.defaultError()
+			return
 
 		}
 
@@ -389,22 +456,22 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 
 }
 
-func (j *JsonParser) getArrayValueTree(result *JSON) *JSON {
+func (j *JsonParser) getArrayTree(res *JSON) {
 
-	if result.Err != nil {
-		return result
+	if res.Err != nil {
+		return
 	}
 
 	var b byte
 	var err error
-	var res *JSON
 
 	for {
 
 		b, err = j.readByte()
 
 		if err != nil {
-			return j.resultError()
+			res.Err = err
+			return
 		}
 
 		if j.isWS(b) {
@@ -416,57 +483,83 @@ func (j *JsonParser) getArrayValueTree(result *JSON) *JSON {
 		}
 
 		if b == ']' { // means complete of current array
-			return result
+			return
 		}
 
 		valType, err := j.getValueType(b)
 
 		if err != nil {
-			return j.resultError()
+			res.Err = err
+			return
 		}
 		switch valType {
 		case String:
 
-			res = j.string()
-			result.ArrayVals = append(result.ArrayVals, res)
+			err = j.string()
+
+			if err != nil {
+				res.Err = err
+				return
+			}
+			res.ArrayVals = append(res.ArrayVals, &JSON{StringVal: j.scratch.string(), ValueType: String})
 
 		case Array:
 
-			res = j.getArrayValueTree(&JSON{ValueType: Array})
-			result.ArrayVals = append(result.ArrayVals, res)
+			r := &JSON{ValueType: Array}
+			j.getArrayTree(r)
+			if r.Err != nil {
+				res.Err = r.Err
+				return
+			}
+			res.ArrayVals = append(res.ArrayVals, r)
 
 		case Object:
 
-			res = j.getObjectValueTree(&JSON{ObjectVals: map[string]*JSON{}, ValueType: Object})
-			result.ArrayVals = append(result.ArrayVals, res)
+			r := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
+			j.getObjectTree(r)
+			if r.Err != nil {
+				res.Err = r.Err
+				return
+			}
+			res.ArrayVals = append(res.ArrayVals, r)
 
 		case Boolean:
 
-			res = j.boolean()
-			result.ArrayVals = append(result.ArrayVals, res)
+			b, err := j.boolean()
+			if err != nil {
+				res.Err = err
+				return
+			}
+
+			res.ArrayVals = append(res.ArrayVals, &JSON{BoolVal: b, ValueType: Boolean})
 
 		case Number:
 
-			res = j.number(b)
-			result.ArrayVals = append(result.ArrayVals, res)
+			err = j.number(b)
+			if err != nil {
+				res.Err = err
+				return
+			}
+			res.ArrayVals = append(res.ArrayVals, &JSON{StringVal: j.scratch.string(), ValueType: Number})
 
 		case Null:
 
-			res = j.null()
-			result.ArrayVals = append(result.ArrayVals, res)
+			err = j.null()
 
-		}
+			if err != nil {
+				res.Err = err
+				return
+			}
 
-		if res.Err != nil {
-			result.Err = res.Err
-			return result
+			res.ArrayVals = append(res.ArrayVals, &JSON{ValueType: Null})
+
 		}
 
 	}
 
 }
 
-func (j *JsonParser) number(first byte) *JSON {
+func (j *JsonParser) number(first byte) error {
 
 	var c byte
 	var err error
@@ -478,7 +571,7 @@ func (j *JsonParser) number(first byte) *JSON {
 		c, err = j.readByte()
 
 		if err != nil {
-			return &JSON{Err: j.defaultError(), ValueType: Invalid}
+			return j.defaultError()
 		}
 
 		if j.isWS(c) {
@@ -486,28 +579,28 @@ func (j *JsonParser) number(first byte) *JSON {
 			c, err = j.skipWS()
 
 			if err != nil {
-				return j.resultError()
+				return j.defaultError()
 			}
 
 			if !(c == ',' || c == '}' || c == ']') {
-				return j.resultError()
+				return j.defaultError()
 			}
 			err := j.unreadByte()
 			if err != nil {
-				return j.resultError()
+				return j.defaultError()
 			}
 
-			return &JSON{StringVal: string(j.scratch.bytes()), ValueType: Number}
+			return nil
 		}
 
 		if c == ',' || c == '}' || c == ']' {
 
 			err := j.unreadByte()
 			if err != nil {
-				return j.resultError()
+				return j.defaultError()
 			}
 
-			return &JSON{StringVal: string(j.scratch.bytes()), ValueType: Number}
+			return nil
 		}
 
 		j.scratch.add(c)
@@ -516,7 +609,7 @@ func (j *JsonParser) number(first byte) *JSON {
 
 }
 
-func (j *JsonParser) boolean() *JSON {
+func (j *JsonParser) boolean() (bool, error) {
 
 	var c byte
 	var err error
@@ -524,7 +617,7 @@ func (j *JsonParser) boolean() *JSON {
 	c, err = j.readByte()
 
 	if err != nil {
-		return j.resultError()
+		return false, j.defaultError()
 	}
 
 	// true
@@ -532,29 +625,29 @@ func (j *JsonParser) boolean() *JSON {
 		c, err = j.readByte()
 
 		if err != nil {
-			return j.resultError()
+			return false, j.defaultError()
 		}
 		if c == 'u' {
 			c, err = j.readByte()
 
 			if err != nil {
-				return j.resultError()
+				return false, j.defaultError()
 			}
 			if c == 'e' {
 				// check last
 				c, err = j.skipWS()
 				if err != nil {
-					return j.resultError()
+					return false, j.defaultError()
 				}
 				if !(c == ',' || c == '}' || c == ']') {
-					return j.resultError()
+					return false, j.defaultError()
 				}
 				err := j.unreadByte()
 				if err != nil {
-					return j.resultError()
+					return false, j.defaultError()
 				}
 
-				return &JSON{BoolVal: true, ValueType: Boolean}
+				return true, nil
 			}
 		}
 	}
@@ -564,45 +657,45 @@ func (j *JsonParser) boolean() *JSON {
 		c, err = j.readByte()
 
 		if err != nil {
-			return j.resultError()
+			return false, j.defaultError()
 		}
 		if c == 'l' {
 			c, err = j.readByte()
 
 			if err != nil {
-				return j.resultError()
+				return false, j.defaultError()
 			}
 			if c == 's' {
 				c, err = j.readByte()
 
 				if err != nil {
-					return j.resultError()
+					return false, j.defaultError()
 				}
 				if c == 'e' {
 					// check last
 					c, err = j.skipWS()
 					if err != nil {
-						return j.resultError()
+						return false, j.defaultError()
 					}
 					if !(c == ',' || c == '}' || c == ']') {
-						return j.resultError()
+						return false, j.defaultError()
 					}
 					err := j.unreadByte()
 					if err != nil {
-						return j.resultError()
+						return false, j.defaultError()
 					}
 
-					return &JSON{BoolVal: false, ValueType: Boolean}
+					return false, nil
 				}
 			}
 		}
 	}
 
-	return j.resultError()
+	return false, j.defaultError()
 
 }
 
-func (j *JsonParser) null() *JSON {
+func (j *JsonParser) null() error {
 
 	var c byte
 	var err error
@@ -610,7 +703,7 @@ func (j *JsonParser) null() *JSON {
 	c, err = j.readByte()
 
 	if err != nil {
-		return j.resultError()
+		return j.defaultError()
 	}
 
 	// true
@@ -618,40 +711,40 @@ func (j *JsonParser) null() *JSON {
 		c, err = j.readByte()
 
 		if err != nil {
-			return j.resultError()
+			return j.defaultError()
 		}
 
 		if c == 'l' {
 			c, err = j.readByte()
 
 			if err != nil {
-				return j.resultError()
+				return j.defaultError()
 			}
 			if c == 'l' {
 				// check last
 				c, err = j.skipWS()
 				if err != nil {
-					return j.resultError()
+					return j.defaultError()
 				}
 
 				if !(c == ',' || c == '}' || c == ']') {
-					return j.resultError()
+					return j.defaultError()
 				}
 
 				err := j.unreadByte()
 				if err != nil {
-					return j.resultError()
+					return j.defaultError()
 				}
 
-				return &JSON{ValueType: Null}
+				return nil
 			}
 		}
 	}
 
-	return j.resultError()
+	return j.defaultError()
 }
 
-func (j *JsonParser) skipString() *JSON {
+func (j *JsonParser) skipString() error {
 
 	var c byte
 	var prev byte
@@ -662,13 +755,13 @@ func (j *JsonParser) skipString() *JSON {
 		c, err = j.readByte()
 
 		if err != nil {
-			return j.resultError()
+			return j.defaultError()
 		}
 
 		if c == '"' {
 
 			if !(prev == '\\' && prevPrev != '\\') { // escape check
-				return &JSON{}
+				return nil
 			}
 
 		}
@@ -680,7 +773,7 @@ func (j *JsonParser) skipString() *JSON {
 
 }
 
-func (j *JsonParser) skipArrayOrObject(start byte, end byte) *JSON {
+func (j *JsonParser) skipArrayOrObject(start byte, end byte) error {
 
 	var c byte
 	var err error
@@ -690,21 +783,21 @@ func (j *JsonParser) skipArrayOrObject(start byte, end byte) *JSON {
 		c, err = j.readByte()
 
 		if err != nil {
-			return j.resultError()
+			return j.defaultError()
 		}
 
 		switch c {
 		case '"':
-			res := j.skipString() // this is needed because string can contain [ or ]
-			if res.Err != nil {
-				return res
+			err = j.skipString() // this is needed because string can contain [ or ]
+			if err != nil {
+				return err
 			}
 		case start:
 			depth++
 		case end:
 			depth--
 			if depth == 0 {
-				return &JSON{}
+				return nil
 			}
 
 		}
@@ -736,31 +829,28 @@ func (j *JsonParser) getValueType(c byte) (ValueType, error) {
 
 }
 
-func (j *JsonParser) getPropName() (string, bool, bool) {
+// first return type is checking if it is property or just an array item
+func (j *JsonParser) getPropName() (bool, error) {
 
-	res := j.string()
+	err := j.string()
 
-	if res.Err != nil {
-		return "", false, true
+	if err != nil {
+		return false, err
 	}
 
 	b, err := j.skipWS()
 
 	if err != nil {
-		return "", false, true
+		return false, err
 	}
 
 	if b == ':' { // end of property name
-		return res.StringVal, true, false
+		return true, nil
 	}
 
 	err = j.unreadByte()
 
-	if err != nil {
-		return "", false, true
-	}
-
-	return res.StringVal, false, false
+	return false, err
 
 }
 
@@ -821,7 +911,11 @@ func (j *JsonParser) unreadByte() error {
 
 func (j *JsonParser) sendError() {
 	err := fmt.Errorf("Invalid json")
-	j.resultChannel <- &JSON{Err: err, ValueType: Invalid}
+	if j.isResArr {
+		j.scratch.addRes(&JSON{Err: err, ValueType: Invalid})
+	} else {
+		j.resChan <- &JSON{Err: err, ValueType: Invalid}
+	}
 }
 
 func (j *JsonParser) resultError() *JSON {
@@ -835,10 +929,8 @@ func (j *JsonParser) defaultError() error {
 	return err
 }
 
-// rest of the part taken and adapted from jstream
-//https://github.com/bcicen/jstream
-// string called by `any` or `object`(for map keys) after reading `"`
-func (j *JsonParser) string() *JSON {
+// based on https://github.com/bcicen/jstream
+func (j *JsonParser) string() error {
 
 	j.scratch.reset()
 
@@ -848,7 +940,7 @@ func (j *JsonParser) string() *JSON {
 	c, err = j.readByte()
 	if err != nil {
 		if err != nil {
-			return j.resultError()
+			return j.defaultError()
 		}
 	}
 
@@ -856,18 +948,17 @@ scan:
 	for {
 		switch {
 		case c == '"':
-			return &JSON{StringVal: string(j.scratch.bytes()), ValueType: String}
+			return nil
 		case c == '\\':
 			c, err = j.readByte()
 			if err != nil {
 				if err != nil {
-					return j.resultError()
+					return j.defaultError()
 				}
 			}
 			goto scan_esc
 		case c < 0x20:
-			err := fmt.Errorf("Invalid json")
-			return &JSON{Err: err, ValueType: Invalid}
+			return j.defaultError()
 			// Coerce to well-formed UTF-8.
 
 		}
@@ -875,7 +966,7 @@ scan:
 		c, err = j.readByte()
 		if err != nil {
 			if err != nil {
-				return j.resultError()
+				return j.defaultError()
 			}
 		}
 	}
@@ -898,13 +989,13 @@ scan_esc:
 		j.scratch.add('\t')
 	default:
 		//err := fmt.Errorf("error in string escape code")
-		return j.resultError()
+		return j.defaultError()
 	}
 
 	c, err = j.readByte()
 	if err != nil {
 		if err != nil {
-			return j.resultError()
+			return j.defaultError()
 		}
 	}
 
@@ -914,14 +1005,14 @@ scan_u:
 	r := j.u4()
 	if r < 0 {
 		//err := fmt.Errorf("in unicode escape sequence")
-		return j.resultError()
+		return j.defaultError()
 	}
 
 	// check for proceeding surrogate pair
 	c, err = j.readByte()
 	if err != nil {
 		if err != nil {
-			return j.resultError()
+			return j.defaultError()
 		}
 	}
 
@@ -933,7 +1024,7 @@ scan_u:
 	c, err = j.readByte()
 	if err != nil {
 		if err != nil {
-			return j.resultError()
+			return j.defaultError()
 		}
 	}
 
@@ -944,7 +1035,7 @@ scan_u:
 
 	r2 := j.u4()
 	if r2 < 0 {
-		return j.resultError()
+		return j.defaultError()
 	}
 
 	// write surrogate pair
@@ -953,7 +1044,7 @@ scan_u:
 	c, err = j.readByte()
 	if err != nil {
 		if err != nil {
-			return j.resultError()
+			return j.defaultError()
 		}
 	}
 
@@ -988,43 +1079,4 @@ func (j *JsonParser) u4() rune {
 		}
 	}
 	return rune(h[0]<<12 + h[1]<<8 + h[2]<<4 + h[3])
-}
-
-type scratch struct {
-	data []byte
-	fill int
-}
-
-// reset scratch buffer
-func (s *scratch) reset() { s.fill = 0 }
-
-// bytes returns the written contents of scratch buffer
-func (s *scratch) bytes() []byte { return s.data[0:s.fill] }
-
-// grow scratch buffer
-func (s *scratch) grow() {
-	ndata := make([]byte, cap(s.data)*2)
-	copy(ndata, s.data[:])
-	s.data = ndata
-}
-
-// append single byte to scratch buffer
-func (s *scratch) add(c byte) {
-	if s.fill+1 >= cap(s.data) {
-		s.grow()
-	}
-
-	s.data[s.fill] = c
-	s.fill++
-}
-
-// append encoded rune to scratch buffer
-func (s *scratch) addRune(r rune) int {
-	if s.fill+utf8.UTFMax >= cap(s.data) {
-		s.grow()
-	}
-
-	n := utf8.EncodeRune(s.data[s.fill:], r)
-	s.fill += n
-	return n
 }
