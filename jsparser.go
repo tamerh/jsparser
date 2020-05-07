@@ -92,9 +92,9 @@ func (j *JsonParser) parse() {
 
 		if b == '"' { // begining of possible json property
 
-			isprop, propErr := j.getPropName()
+			isprop, err := j.getPropName()
 
-			if propErr {
+			if err != nil {
 				j.sendError()
 				return
 			}
@@ -304,16 +304,12 @@ func (j *JsonParser) getObjectTree(res *JSON) {
 
 		if b == '"' { // begining of json property
 
-			isprop, err2 := j.getPropName()
+			_, err := j.getPropName() // first variable ommited because inside object there can't be string item
 			prop := j.scratch.string()
 
-			if err2 {
-				res.Err = j.defaultError()
+			if err != nil {
+				res.Err = err
 				return
-			}
-
-			if !isprop { // look again
-				continue
 			}
 
 			b, err = j.skipWS()
@@ -823,31 +819,28 @@ func (j *JsonParser) getValueType(c byte) (ValueType, error) {
 
 }
 
-func (j *JsonParser) getPropName() (bool, bool) {
+// first return type is checking if it is property or just an array item
+func (j *JsonParser) getPropName() (bool, error) {
 
 	err := j.string()
 
 	if err != nil {
-		return false, true
+		return false, err
 	}
 
 	b, err := j.skipWS()
 
 	if err != nil {
-		return false, true
+		return false, err
 	}
 
 	if b == ':' { // end of property name
-		return true, false
+		return true, nil
 	}
 
 	err = j.unreadByte()
 
-	if err != nil {
-		return false, true
-	}
-
-	return false, false
+	return false, err
 
 }
 
