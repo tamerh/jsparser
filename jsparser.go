@@ -286,21 +286,21 @@ func (j *JsonParser) loopArray() bool {
 
 }
 
-func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
+func (j *JsonParser) getObjectValueTree(res *JSON) {
 
-	if result.Err != nil {
-		return result
+	if res.Err != nil {
+		return
 	}
 
 	var b byte
 	var err error
-	var res *JSON
 	for {
 
 		b, err = j.readByte()
 
 		if err != nil {
-			return j.resultError()
+			res.Err = err
+			return
 		}
 
 		if j.isWS(b) {
@@ -310,10 +310,11 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 		if b == '"' { // begining of json property
 
 			isprop, err2 := j.getPropName()
+			prop := j.scratch.string()
 
 			if err2 {
-				result.Err = j.defaultError()
-				return result
+				res.Err = j.defaultError()
+				return
 			}
 
 			if !isprop { // look again
@@ -322,17 +323,16 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 
 			b, err = j.skipWS()
 			if err != nil {
-				result.Err = j.defaultError()
-				return result
+				res.Err = j.defaultError()
+				return
 			}
 
 			valType, err := j.getValueType(b)
 
 			if err != nil {
-				result.Err = err
-				return result
+				res.Err = err
+				return
 			}
-			prop := j.scratch.string()
 
 			switch valType {
 			case String:
@@ -341,8 +341,8 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 					err = j.skipString()
 
 					if err != nil {
-						result.Err = err
-						return result
+						res.Err = err
+						return
 					}
 					break
 				}
@@ -350,11 +350,11 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 				err = j.string()
 
 				if err != nil {
-					result.Err = err
-					return result
+					res.Err = err
+					return
 				}
 
-				result.ObjectVals[prop] = &JSON{StringVal: j.scratch.string(), ValueType: String}
+				res.ObjectVals[prop] = &JSON{StringVal: j.scratch.string(), ValueType: String}
 
 			case Array:
 
@@ -362,18 +362,18 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 					err = j.skipArrayOrObject('[', ']')
 
 					if err != nil {
-						result.Err = err
-						return result
+						res.Err = err
+						return
 					}
 					break
 				}
-
-				res = j.getArrayValueTree(&JSON{ValueType: Array})
-				if res.Err != nil {
-					result.Err = res.Err
-					return result
+				r := &JSON{ValueType: Array}
+				j.getArrayValueTree(r)
+				if r.Err != nil {
+					res.Err = r.Err
+					return
 				}
-				result.ObjectVals[prop] = res
+				res.ObjectVals[prop] = r
 
 			case Object:
 
@@ -381,32 +381,32 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 					err = j.skipArrayOrObject('{', '}')
 
 					if err != nil {
-						result.Err = err
-						return result
+						res.Err = err
+						return
 					}
 					break
 				}
+				r := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
+				j.getObjectValueTree(r)
 
-				res = j.getObjectValueTree(&JSON{ObjectVals: map[string]*JSON{}, ValueType: Object})
-
-				if res.Err != nil {
-					result.Err = res.Err
-					return result
+				if r.Err != nil {
+					res.Err = r.Err
+					return
 				}
-				result.ObjectVals[prop] = res
+				res.ObjectVals[prop] = r
 
 			case Boolean:
 
 				b, err := j.boolean()
 
 				if err != nil {
-					result.Err = err
-					return result
+					res.Err = err
+					return
 				}
 
 				// rest of the skip since they are small we just don't include in the result
 				if ok := j.skipProps[prop]; !ok {
-					result.ObjectVals[prop] = &JSON{BoolVal: b, ValueType: Boolean}
+					res.ObjectVals[prop] = &JSON{BoolVal: b, ValueType: Boolean}
 				}
 
 			case Number:
@@ -414,24 +414,24 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 				err = j.number(b)
 
 				if err != nil {
-					result.Err = err
-					return result
+					res.Err = err
+					return
 				}
 
 				if ok := j.skipProps[prop]; !ok {
-					result.ObjectVals[prop] = &JSON{StringVal: j.scratch.string(), ValueType: Number}
+					res.ObjectVals[prop] = &JSON{StringVal: j.scratch.string(), ValueType: Number}
 				}
 
 			case Null:
 
 				err = j.null()
 				if err != nil {
-					result.Err = err
-					return result
+					res.Err = err
+					return
 				}
 
 				if ok := j.skipProps[prop]; !ok {
-					result.ObjectVals[prop] = &JSON{ValueType: Null}
+					res.ObjectVals[prop] = &JSON{ValueType: Null}
 				}
 
 			}
@@ -442,12 +442,12 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 
 		} else if b == '}' { // completion of current object
 
-			return result
+			return
 
 		} else { // invalid end
 
-			result.Err = j.defaultError()
-			return result
+			res.Err = j.defaultError()
+			return
 
 		}
 
@@ -455,22 +455,22 @@ func (j *JsonParser) getObjectValueTree(result *JSON) *JSON {
 
 }
 
-func (j *JsonParser) getArrayValueTree(result *JSON) *JSON {
+func (j *JsonParser) getArrayValueTree(res *JSON) {
 
-	if result.Err != nil {
-		return result
+	if res.Err != nil {
+		return
 	}
 
 	var b byte
 	var err error
-	var res *JSON
 
 	for {
 
 		b, err = j.readByte()
 
 		if err != nil {
-			return j.resultError()
+			res.Err = err
+			return
 		}
 
 		if j.isWS(b) {
@@ -482,13 +482,14 @@ func (j *JsonParser) getArrayValueTree(result *JSON) *JSON {
 		}
 
 		if b == ']' { // means complete of current array
-			return result
+			return
 		}
 
 		valType, err := j.getValueType(b)
 
 		if err != nil {
-			return j.resultError()
+			res.Err = err
+			return
 		}
 		switch valType {
 		case String:
@@ -496,58 +497,60 @@ func (j *JsonParser) getArrayValueTree(result *JSON) *JSON {
 			err = j.string()
 
 			if err != nil {
-				result.Err = err
-				return result
+				res.Err = err
+				return
 			}
-			result.ArrayVals = append(result.ArrayVals, &JSON{StringVal: j.scratch.string(), ValueType: String})
+			res.ArrayVals = append(res.ArrayVals, &JSON{StringVal: j.scratch.string(), ValueType: String})
 
 		case Array:
 
-			res = j.getArrayValueTree(&JSON{ValueType: Array})
-			if res.Err != nil {
-				result.Err = res.Err
-				return result
+			r := &JSON{ValueType: Array}
+			j.getArrayValueTree(r)
+			if r.Err != nil {
+				res.Err = r.Err
+				return
 			}
-			result.ArrayVals = append(result.ArrayVals, res)
+			res.ArrayVals = append(res.ArrayVals, r)
 
 		case Object:
 
-			res = j.getObjectValueTree(&JSON{ObjectVals: map[string]*JSON{}, ValueType: Object})
-			if res.Err != nil {
-				result.Err = res.Err
-				return result
+			r := &JSON{ObjectVals: map[string]*JSON{}, ValueType: Object}
+			j.getObjectValueTree(r)
+			if r.Err != nil {
+				res.Err = r.Err
+				return
 			}
-			result.ArrayVals = append(result.ArrayVals, res)
+			res.ArrayVals = append(res.ArrayVals, r)
 
 		case Boolean:
 
 			b, err := j.boolean()
 			if err != nil {
-				result.Err = err
-				return result
+				res.Err = err
+				return
 			}
 
-			result.ArrayVals = append(result.ArrayVals, &JSON{BoolVal: b, ValueType: Boolean})
+			res.ArrayVals = append(res.ArrayVals, &JSON{BoolVal: b, ValueType: Boolean})
 
 		case Number:
 
 			err = j.number(b)
 			if err != nil {
-				result.Err = err
-				return result
+				res.Err = err
+				return
 			}
-			result.ArrayVals = append(result.ArrayVals, &JSON{StringVal: j.scratch.string(), ValueType: Number})
+			res.ArrayVals = append(res.ArrayVals, &JSON{StringVal: j.scratch.string(), ValueType: Number})
 
 		case Null:
 
 			err = j.null()
 
 			if err != nil {
-				result.Err = err
-				return result
+				res.Err = err
+				return
 			}
 
-			result.ArrayVals = append(result.ArrayVals, &JSON{ValueType: Null})
+			res.ArrayVals = append(res.ArrayVals, &JSON{ValueType: Null})
 
 		}
 
