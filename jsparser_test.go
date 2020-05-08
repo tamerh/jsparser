@@ -226,23 +226,23 @@ func TestObject(t *testing.T) {
 		panic("Value type must be object")
 	}
 
-	if val, ok := js.ObjectVals["o1"]; !ok || val.StringVal != "o1string" || val.ValueType != String {
+	if val, ok := js.ObjectVals["o1"]; !ok || val.(string) != "o1string" {
 		panic("Test failed")
 	}
 
-	if val, ok := js.ObjectVals["o2"]; !ok || val.StringVal != "o2string" || val.ValueType != String {
+	if val, ok := js.ObjectVals["o2"]; !ok || val.(string) != "o2string" {
 		panic("Test failed")
 	}
 
-	if val, ok := js.ObjectVals["o3"]; !ok || !val.BoolVal || val.ValueType != Boolean {
+	if val, ok := js.ObjectVals["o3"]; !ok || !val.(bool) {
 		panic("Test failed")
 	}
 
-	if val, ok := js.ObjectVals["o4"]; !ok || val.ValueType != Array || len(val.ArrayVals) != 3 {
+	if val, ok := js.ObjectVals["o4"]; !ok || len(val.(*JSON).ArrayVals) != 3 {
 		panic("Test failed")
 	}
 
-	if val := js.ObjectVals["o4"]; val.ValueType != Array || len(val.ArrayVals[2].ArrayVals) != 6 {
+	if val, ok := js.ObjectVals["o4"]; !ok || len(val.(*JSON).ArrayVals[2].(*JSON).ArrayVals) != 6 {
 		panic("Test failed")
 	}
 
@@ -282,7 +282,7 @@ func TestObject(t *testing.T) {
 		panic("Test failed")
 	}
 
-	if val, ok := js.ObjectVals["o3"]; !ok || !val.BoolVal || val.ValueType != Boolean {
+	if val, ok := js.ObjectVals["o3"]; !ok || !val.(bool) {
 		panic("Test failed")
 	}
 
@@ -387,15 +387,15 @@ func TestArrayOnly(t *testing.T) {
 			}
 			results = append(results, json)
 		}
-		if results[0].ObjectVals["Text"].StringVal != "Knock knock." {
+		if results[0].ObjectVals["Text"].(string) != "Knock knock." {
 			t.Fatal("results[0] Test failed ")
 		}
 
-		if results[1].ObjectVals["Name"].StringVal != "Sam" {
+		if results[1].ObjectVals["Name"].(string) != "Sam" {
 			t.Fatal("results[0] Test failed ")
 		}
 
-		if results[4].ObjectVals["Name"].StringVal != "Ed" {
+		if results[4].ObjectVals["Name"].(string) != "Ed" {
 			t.Fatal("results[0] Test failed ")
 		}
 	}
