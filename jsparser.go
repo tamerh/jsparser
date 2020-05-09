@@ -2,8 +2,8 @@ package jsparser
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
-	"reflect"
 	"unicode/utf16"
 )
 
@@ -123,7 +123,7 @@ func (j *JsonParser) parse() {
 					return
 				}
 
-				if reflect.DeepEqual(j.loopProp, j.scratch.bytes()) {
+				if bytes.Equal(j.loopProp, j.scratch.bytes()) {
 
 					switch valType {
 					case String:
