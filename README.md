@@ -38,9 +38,9 @@ br := bufio.NewReaderSize(f,65536)
 parser := jsparser.NewJSONParser(br, "books")
 
 for json:= range parser.Stream() {
-    fmt.Println(json.ObjectVals["title"].StringVal)
-    fmt.Println(json.ObjectVals["price"].StringVal)
-    fmt.Println(json.ObjectVals["comments"].ArrayVals[0].ObjectVals["rating"].StringVal)
+		fmt.Println(json.ObjectVals["title"])
+		fmt.Println(json.ObjectVals["price"])
+		fmt.Println(json.ObjectVals["comments"].(*jsparser.JSON).ArrayVals[0].(*jsparser.JSON).ObjectVals["rating"])
 }
 
 // for relatively small size json. get all the results as slice
