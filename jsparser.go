@@ -88,115 +88,145 @@ func (j *JsonParser) parse() {
 	var b byte
 	var err error
 
-	for {
-		b, err = j.readByte()
-
-		if err != nil {
-			return
-		}
-
-		if j.isWS(b) {
-			continue
-		}
-
-		if b == '"' { // begining of possible json property
-
-			isprop, err := j.getPropName()
-
+	 
+	if len(j.loopProp)==0{ // expecting top level json is an Array
+		for {
+			b, err = j.readByte()
+	
 			if err != nil {
-				j.sendError()
 				return
 			}
+	
+			if j.isWS(b) {
+				continue
+			}
+	
+			if b == '[' { 
+				
+				j.loopArray()
+				return
 
-			if isprop {
+			}
 
-				b, err = j.skipWS()
+			j.sendErrorStr("Check your json. When loop property is empty top level json must be an Array")
+			return
+
+		}
+	}else{
+
+		for {
+			b, err = j.readByte()
+	
+			if err != nil {
+				return
+			}
+	
+			if j.isWS(b) {
+				continue
+			}
+	
+			if b == '"' { // begining of possible json property
+	
+				isprop, err := j.getPropName()
+	
 				if err != nil {
 					j.sendError()
 					return
 				}
-
-				valType, typeErr := j.getValueType(b)
-
-				if typeErr != nil {
-					j.sendError()
-					return
-				}
-
-				if bytes.Equal(j.loopProp, j.scratch.bytes()) {
-
-					switch valType {
-					case String:
-
-						err = j.string()
-
-						if err != nil {
-							j.sendError()
-							return
-						}
-						j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: String})
-
-					case Array:
-
-						success := j.loopArray()
-						if !success {
-							return
-						}
-
-					case Object:
-
-						res := &JSON{ObjectVals: map[string]interface{}{}, ValueType: Object}
-						j.getObjectTree(res)
-						j.sendRes(res)
-						if res.Err != nil {
-							return
-						}
-
-					case Boolean:
-
-						b, err := j.boolean()
-						if err != nil {
-							j.sendError()
-							return
-						}
-						j.sendRes(&JSON{BoolVal: b, ValueType: Boolean})
-
-					case Number:
-
-						err = j.number(b)
-
-						if err != nil {
-							j.sendError()
-							return
-						}
-						j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: Number})
-
-					case Null:
-
-						err := j.null()
-
-						if err != nil {
-							j.sendError()
-							return
-						}
-						j.sendRes(&JSON{ValueType: Null})
-
+	
+				if isprop {
+	
+					b, err = j.skipWS()
+					if err != nil {
+						j.sendError()
+						return
 					}
-
-				} else {
-
-					if valType == String { // if valtype is string just skip it otherwise continue looking loopProp.
-						err = j.skipString()
-						if err != nil {
-							j.sendError()
-							return
-						}
+	
+					valType, typeErr := j.getValueType(b)
+	
+					if typeErr != nil {
+						j.sendError()
+						return
 					}
-
+	
+					if bytes.Equal(j.loopProp, j.scratch.bytes()) {
+	
+						switch valType {
+						case String:
+	
+							err = j.string()
+	
+							if err != nil {
+								j.sendError()
+								return
+							}
+							j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: String})
+	
+						case Array:
+	
+							success := j.loopArray()
+							if !success {
+								return
+							}
+	
+						case Object:
+	
+							res := &JSON{ObjectVals: map[string]interface{}{}, ValueType: Object}
+							j.getObjectTree(res)
+							j.sendRes(res)
+							if res.Err != nil {
+								return
+							}
+	
+						case Boolean:
+	
+							b, err := j.boolean()
+							if err != nil {
+								j.sendError()
+								return
+							}
+							j.sendRes(&JSON{BoolVal: b, ValueType: Boolean})
+	
+						case Number:
+	
+							err = j.number(b)
+	
+							if err != nil {
+								j.sendError()
+								return
+							}
+							j.sendRes(&JSON{StringVal: j.scratch.string(), ValueType: Number})
+	
+						case Null:
+	
+							err := j.null()
+	
+							if err != nil {
+								j.sendError()
+								return
+							}
+							j.sendRes(&JSON{ValueType: Null})
+	
+						}
+	
+					} else {
+	
+						if valType == String { // if valtype is string just skip it otherwise continue looking loopProp.
+							err = j.skipString()
+							if err != nil {
+								j.sendError()
+								return
+							}
+						}
+	
+					}
 				}
 			}
 		}
+
 	}
+
+
 
 }
 
@@ -911,6 +941,15 @@ func (j *JsonParser) unreadByte() error {
 
 func (j *JsonParser) sendError() {
 	err := fmt.Errorf("Invalid json")
+	if j.isResArr {
+		j.scratch.addRes(&JSON{Err: err, ValueType: Invalid})
+	} else {
+		j.resChan <- &JSON{Err: err, ValueType: Invalid}
+	}
+}
+
+func (j *JsonParser) sendErrorStr(s string) {
+	err := fmt.Errorf(s)
 	if j.isResArr {
 		j.scratch.addRes(&JSON{Err: err, ValueType: Invalid})
 	} else {

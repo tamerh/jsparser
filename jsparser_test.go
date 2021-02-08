@@ -401,6 +401,61 @@ func TestArrayOnly(t *testing.T) {
 	}
 }
 
+func TestRootArray(t *testing.T) {
+
+	jsarray := `
+		[
+											{"Name": "Ed", "Text": "Knock knock."},
+											{"Name": "Sam", "Text": "Who's there?"},
+											{"Name": "Ed", "Text": "Go fmt."},
+											{"Name": "Sam", "Text": "Go fmt ?"},
+											{"Name": "Ed", "Text": "Go fmt !"},
+											"Hello World",
+											666,
+											null,
+											true
+									]`
+
+	br := bufio.NewReader(bytes.NewReader([]byte(jsarray)))
+	p := NewJSONParser(br, "")
+	var results []*JSON
+	for _, json := range allResult(p) {
+
+		if json.Err != nil {
+			t.Fatal(" Test failed")
+		}
+		results = append(results, json)
+	}
+	if results[0].ObjectVals["Text"].(string) != "Knock knock." {
+		t.Fatal("results[0] Test failed ")
+	}
+
+	if results[1].ObjectVals["Name"].(string) != "Sam" {
+		t.Fatal("results[0] Test failed ")
+	}
+
+	if results[4].ObjectVals["Name"].(string) != "Ed" {
+		t.Fatal("results[0] Test failed ")
+	}
+
+	if results[5].StringVal != "Hello World" {
+		t.Fatal("results[0] Test failed ")
+	}
+
+	if results[6].StringVal != "666" {
+		t.Fatal("results[0] Test failed ")
+	}
+
+	if results[7].StringVal != "" {
+		t.Fatal("results[0] Test failed ")
+	}
+
+	if !results[8].BoolVal {
+		t.Fatal("results[0] Test failed ")
+	}
+
+}
+
 func TestInvalid(t *testing.T) {
 
 	invalidStart := `{{"Name": "Ed", "Text": "Go fmt."},"s":"valid","s2":in"valid"}`
